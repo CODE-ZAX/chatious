@@ -19,6 +19,9 @@ function Navbar() {
         ) : (
           <>
             <li>
+              <Link to={`/rooms`}>Rooms</Link>
+            </li>
+            <li>
               <Link to={`/profile/${user.username}`}>{user.username}</Link>
             </li>
             <li>
