@@ -15,6 +15,8 @@ const User = require("../models/User");
 
 const roomChangeStream = Room.watch(); // Watch for changes in the Room collection
 
+const roomsUsers = {};
+
 roomChangeStream.on("change", async (change) => {
   if (change.operationType === "insert") {
     const room = await Room.findById(change.documentKey._id);
@@ -35,7 +37,8 @@ io.on("connection", (socket) => {
     try {
       const user = await User.findById(userId);
       const room = await Room.findById(roomId);
-
+      socket.userId = userId;
+      socket.roomId = roomId;
       if (!room.users.some((u) => u.toString() === user.id)) {
         room.users.unshift(user.id);
         await room.save();
@@ -43,13 +46,32 @@ io.on("connection", (socket) => {
 
       socket.join(roomId);
 
-      const messageHistory = room.messages;
-      socket.emit("messageHistory", messageHistory);
+      // Add user to roomsUsers object
+      if (!roomsUsers[roomId]) {
+        roomsUsers[roomId] = [];
+      }
+      roomsUsers[roomId].push(user.username); // Push user's name instead of object
 
-      io.to(roomId).emit("message", {
+      io.to(roomId).emit("adminMessage", {
         user: "admin",
         text: `${user.username} has joined the room!`,
       });
+
+      io.to(roomId).emit("joined", {
+        members: roomsUsers[roomId] || [],
+      });
+    } catch (err) {
+      console.error(err.message);
+    }
+  });
+  socket.on("getMessages", async ({ roomId, page }) => {
+    try {
+      const room = await Room.findById(roomId);
+      const messages = room.messages
+        .sort((a, b) => b._id - a._id) // Sort messages by id in descending order to get the latest messages first
+        .slice(page * 30, (page + 1) * 30); // Skip messages that belong to pages before the current page and limit the result to 30 messages
+
+      socket.emit("messages", messages);
     } catch (err) {
       console.error(err.message);
     }
@@ -57,6 +79,7 @@ io.on("connection", (socket) => {
 
   socket.on("leaveRoom", async ({ userId, roomId }) => {
     try {
+      const user = await User.findById(userId); // Fetch user to get the username
       const room = await Room.findById(roomId);
       const removeIndex = room.users
         .map((user) => user.toString())
@@ -68,6 +91,15 @@ io.on("connection", (socket) => {
       }
 
       socket.leave(roomId);
+
+      // Remove user from roomsUsers object
+      roomsUsers[roomId] = roomsUsers[roomId].filter(
+        (username) => username !== user.username
+      );
+      io.to(roomId).emit("adminMessage", {
+        user: "admin",
+        text: `${user.username} has left the room!`,
+      });
     } catch (err) {
       console.error(err.message);
     }
@@ -75,7 +107,6 @@ io.on("connection", (socket) => {
 
   socket.on("sendMessage", async ({ userId, roomId, text }) => {
     try {
-      console.log(text);
       const user = await User.findById(userId);
       const room = await Room.findById(roomId);
       console.log(room);
@@ -85,7 +116,7 @@ io.on("connection", (socket) => {
         user: userId,
       };
 
-      room.messages.unshift(newMessage);
+      room.messages.push(newMessage);
       await room.save();
 
       io.to(roomId).emit("message", newMessage);
@@ -101,7 +132,7 @@ io.on("connection", (socket) => {
         roomId: room._id,
         name: room.name,
         description: room.description,
-        users: room.users.length,
+        users: roomsUsers[roomId] || [], // Now contains usernames of users currently in the room
       };
       socket.emit("roomInfo", roomInfo);
     } catch (err) {
@@ -123,9 +154,39 @@ io.on("connection", (socket) => {
       console.error(err.message);
     }
   });
+  socket.on("disconnect", async () => {
+    try {
+      const userId = socket.userId;
+      const roomId = socket.roomId;
+      console.log(userId, roomId);
+      if (userId && roomId) {
+        const user = await User.findById(userId); // Fetch user to get the username
+        const room = await Room.findById(roomId);
+        const removeIndex = room.users
+          .map((user) => user.toString())
+          .indexOf(userId);
 
-  socket.on("disconnect", () => {
-    console.log("User had left!!!");
+        if (removeIndex !== -1) {
+          room.users.splice(removeIndex, 1);
+          await room.save();
+        }
+
+        // Remove user from roomsUsers object
+        roomsUsers[roomId] = roomsUsers[roomId].filter(
+          (username) => username !== user.username
+        );
+
+        // Emit a message indicating that the user has disconnected
+        io.to(roomId).emit("adminMessage", {
+          user: "admin",
+          text: `${user.username} has disconnected!`,
+        });
+      }
+
+      console.log("User had left!!!");
+    } catch (err) {
+      console.error(err.message);
+    }
   });
 });
 

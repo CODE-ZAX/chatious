@@ -7,38 +7,65 @@ import Cookies from "js-cookie";
 
 const Rooms = () => {
   const { socket } = useAuth();
-  const [_, setRooms] = useState([]);
+  const [rooms, setRooms] = useState([]);
+  const [searchId, setSearchId] = useState("");
+  const [searchName, setSearchName] = useState("");
   const [toggleCreate, setToggleCreate] = useState(false);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
+
   useEffect(() => {
     if (socket) {
-      socket.emit("getAllRooms");
-      socket.on("newRoom", (room) => {
-        setRooms([..._, room]);
-      });
-      socket.on("allRoomsInfo", (rooms) => {
-        console.log(rooms);
+      const handleNewRoom = (room) => {
+        setRooms((prevRooms) => [...prevRooms, room]);
+      };
+
+      const handleAllRoomsInfo = (rooms) => {
         if (rooms) {
           setRooms(rooms);
         } else {
           setRooms([]);
         }
-      });
+      };
+
+      socket.emit("getAllRooms");
+      socket.on("newRoom", handleNewRoom);
+      socket.on("allRoomsInfo", handleAllRoomsInfo);
+
+      return () => {
+        socket.off("newRoom", handleNewRoom);
+        socket.off("allRoomsInfo", handleAllRoomsInfo);
+      };
     }
   }, [socket]);
 
+  const filteredRooms = rooms.filter((room) => {
+    return room.roomId.includes(searchId) && room.name.includes(searchName);
+  });
+
   return (
-    <div className="container">
-      <h3>Active Rooms</h3>
-      <div className="container d-flex justify-content-between">
+    <div className="container mt-5 pt-3">
+      <h3 className="mb-4">Active Rooms</h3>
+      <div className="d-flex justify-content-between align-items-center mb-4">
         <div>
-          <label>
-            <h5>search room</h5>
+          <label className="form-label">
+            <h5>Search room</h5>
           </label>
-          <div>
-            <input type="text" placeholder="Search by id" className="me-2" />
-            <input type="text" placeholder="Search by name" />
+          <div className="d-flex">
+            <input
+              type="text"
+              placeholder="Search by id"
+              className="form-control me-2"
+              value={searchId}
+              onChange={(e) => setSearchId(e.target.value)}
+            />
+            <input
+              type="text"
+              placeholder="Search by name"
+              className="form-control"
+              value={searchName}
+              onChange={(e) => setSearchName(e.target.value)}
+            />
           </div>
         </div>
         <div>
@@ -46,6 +73,7 @@ const Rooms = () => {
             onClick={() => {
               setToggleCreate((prev) => !prev);
             }}
+            className="btn btn-primary"
           >
             Create
           </button>
@@ -53,7 +81,7 @@ const Rooms = () => {
       </div>
       <hr />
       {toggleCreate && (
-        <div>
+        <div className="mb-4">
           <form
             onSubmit={(e) => {
               e.preventDefault();
@@ -74,36 +102,40 @@ const Rooms = () => {
                 });
             }}
           >
-            <div>
-              <label>Name</label>
+            <div className="mb-3">
+              <label className="form-label">Name</label>
               <input
                 type="text"
                 placeholder="Title"
                 onChange={(e) => {
                   setTitle(e.target.value);
                 }}
+                className="form-control"
               />
             </div>
-            <div>
-              <label>Description</label>
+            <div className="mb-3">
+              <label className="form-label">Description</label>
               <input
                 type="text"
                 placeholder="Description"
                 onChange={(e) => {
                   setDescription(e.target.value);
                 }}
+                className="form-control"
               />
             </div>
-            <div>
-              <button>Create Room</button>
+            <div className="mb-3">
+              <button className="btn btn-success">Create Room</button>
             </div>
           </form>
         </div>
       )}
       <div>
-        {_.length === 0 && <div>No rooms Available</div>}
-        {_.length !== 0 &&
-          _.map((room) => <RoomsItem room={room} key={room} />)}
+        {filteredRooms.length === 0 && (
+          <div className="alert alert-warning">No rooms Available</div>
+        )}
+        {filteredRooms.length !== 0 &&
+          filteredRooms.map((room) => <RoomsItem room={room} key={room._id} />)}
       </div>
     </div>
   );

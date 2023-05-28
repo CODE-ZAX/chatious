@@ -10,10 +10,12 @@ export const useAuth = () => useContext(AuthContext);
 const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [socket, setSocket] = useState(null);
+
   // const [socket,setSocket]
   const logout = () => {
     Cookies.remove("token"); // remove the token from cookie
     setUser(null); // set the user state to null
+    setSocket(null);
   };
 
   useEffect(() => {
